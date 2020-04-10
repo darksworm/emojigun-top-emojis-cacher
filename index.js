@@ -1,7 +1,16 @@
 const lib = require('./lib');
 const axios = require('axios');
+const fs = require('fs');
 
 exports.handler = async event => {
+  const blacklistWords = fs
+    .readFileSync('blacklist.txt')
+    .toString()
+    .split('\n')
+    .filter(x => x);
+
+  const blacklistRegex = new RegExp(blacklistWords.join('|'), 'gi');
+
   let files = [];
   let promises = {};
   let emotePromises = [];
@@ -13,14 +22,16 @@ exports.handler = async event => {
           page,
       )
       .then(function(response) {
-        response.data.emoticons.map(x => {
-          let promise = lib.getFile(x.name, x.urls).then(function(file) {
-            files.push(file);
-            console.log(files.length, 'files downloaded');
-          });
+        response.data.emoticons
+          .filter(x => !blacklistRegex.test(x.name))
+          .map(x => {
+            let promise = lib.getFile(x.name, x.urls).then(function(file) {
+              files.push(file);
+              console.log(files.length, 'files downloaded');
+            });
 
-          emotePromises.push(promise);
-        });
+            emotePromises.push(promise);
+          });
       });
 
     promises['ffz' + page] = ffzPromise;
@@ -32,6 +43,10 @@ exports.handler = async event => {
     )
     .then(function(resp) {
       for (let emote of resp.data.ffzEmotes) {
+        if (blacklistRegex.test(emote.emote)) {
+          continue;
+        }
+
         let promise = axios
           .get('https://api.frankerfacez.com/v1/emote/' + emote.id)
           .then(
