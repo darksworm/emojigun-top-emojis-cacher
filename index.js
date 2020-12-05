@@ -1,6 +1,9 @@
 const lib = require('./lib');
 const axios = require('axios');
 const fs = require('fs');
+const JSZip = require('jszip');
+var zip = new JSZip();
+var downloaded = 0;
 
 exports.handler = async event => {
   const blacklistWords = fs
@@ -21,16 +24,26 @@ exports.handler = async event => {
         'https://api.frankerfacez.com/v1/emoticons?sort=count&per_page=200&page=' +
           page,
       )
-      .then(function(response) {
+      .then(async function(response) {
         response.data.emoticons
           .filter(x => !blacklistRegex.test(x.name))
-          .map(x => {
+          .map(async x => {
             let promise = lib.getFile(x.name, x.urls).then(function(file) {
               files.push(file);
-              console.log(files.length, 'files downloaded');
+              console.log(++downloaded, 'files downloaded');
             });
 
             emotePromises.push(promise);
+
+              if (Object.keys(emotePromises).length % 5 === 0) {
+                await Promise.all(Object.values(emotePromises))
+                      .then(() => {
+                          let chunk = files;
+                          files = [];
+                          chunk.map(file => zip.file(file.filename, file.blob));
+                          delete chunk;
+                      });
+              }
           });
       });
 
@@ -41,7 +54,7 @@ exports.handler = async event => {
     .get(
       'https://api.streamelements.com/kappa/v2/chatstats/global/stats?limit=100',
     )
-    .then(function(resp) {
+    .then(async function(resp) {
       for (let emote of resp.data.ffzEmotes) {
         if (blacklistRegex.test(emote.emote)) {
           continue;
@@ -50,7 +63,7 @@ exports.handler = async event => {
         let promise = axios
           .get('https://api.frankerfacez.com/v1/emote/' + emote.id)
           .then(
-            function(loadedEmote) {
+            async function(loadedEmote) {
               let promise = lib
                 .getFile(
                   loadedEmote.data.emote.name,
@@ -58,10 +71,20 @@ exports.handler = async event => {
                 )
                 .then(function(file) {
                   files.push(file);
-                  console.log(files.length, 'files downloaded');
+                  console.log(++downloaded, 'files downloaded');
                 });
 
               emotePromises.push(promise);
+
+              if (Object.keys(emotePromises).length % 5 === 0) {
+                await Promise.all(Object.values(emotePromises))
+                      .then(() => {
+                          let chunk = files;
+                          files = [];
+                          chunk.map(file => zip.file(file.filename, file.blob));
+                          delete chunk;
+                      });
+              }
             },
             function() {
               // if a request fails there is not much we can do
@@ -74,8 +97,10 @@ exports.handler = async event => {
 
       return Promise.all(Object.values(promises)).then(function() {
         return Promise.all(emotePromises).then(function() {
-          return lib.generateZip(files);
+          return lib.generateZip(zip);
         });
       });
     });
 };
+
+exports.handler();

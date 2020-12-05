@@ -3,83 +3,78 @@ const JSZip = require('jszip');
 const AWS = require('aws-sdk');
 const s3 = new AWS.S3();
 
-function generateZip(files) {
-  console.log('generating zip');
+function generateZip(zip) {
+    return new Promise( (resolve, reject) => {
+        console.log('generating zip');
 
-  let zip = new JSZip();
+        return zip.generateAsync({type: 'nodebuffer'}).then(blob => {
+            let param = {
+                Bucket: 'emojigun.com',
+                Body: blob,
+                Key: 'top-emojis.zip',
+                ACL: 'public-read',
+                CacheControl: 'max-age=604800,public',
+            };
 
-  files.flat().map(file => {
-    zip.file(file.filename, file.blob);
-  });
+            console.log('zip generated');
 
-  return zip.generateAsync({type: 'nodebuffer'}).then(blob => {
-    let param = {
-      Bucket: 'emojigun.com',
-      Body: blob,
-      Key: 'top-emojis.zip',
-      ACL: 'public-read',
-      CacheControl: 'max-age=604800,public',
-    };
-
-    console.log('zip generated');
-
-    return s3.upload(param, function(err, data) {
-      if (err) {
-        console.log(err, err.stack);
-        throw err;
-      } else {
-        console.log(data);
-      }
+            return s3.upload(param, function(err, data) {
+                if (err) {
+                    console.log(err, err.stack);
+                    reject(err);
+                } else {
+                    console.log("success");
+                    console.log(data);
+                    resolve(data);
+                }
+            });
+        });
     });
-  });
 }
 
 function getLargestUrl(urls) {
-  let maxIdx = Object.keys(urls)
-    .sort()
-    .reverse()[0];
+    let maxIdx = Object.keys(urls)
+        .sort()
+        .reverse()[0];
 
-  let url = urls[maxIdx];
-  if (url.indexOf('https') === -1) {
-    return 'https:' + url;
-  }
+    let url = urls[maxIdx];
+    if (url.indexOf('https') === -1) {
+        return 'https:' + url;
+    }
 
-  return url;
+    return url;
 }
 
 function getEmoji(name, urls) {
-  let largestUrl = getLargestUrl(urls);
-  let urlTextAfterLastDot = largestUrl.split('.').slice(-1)[0];
-  let filename = name;
-  if (urlTextAfterLastDot !== largestUrl) {
-    filename += '.' + urlTextAfterLastDot.toLowerCase();
-  }
+    let largestUrl = getLargestUrl(urls);
 
-  return {
-    name: name,
-    filename: filename,
-    url: largestUrl,
-  };
+    return {
+        name: name,
+        url: largestUrl
+    };
 }
 
 function getFile(name, urls) {
-  return new Promise(resolve => {
-    let emoji = getEmoji(name, urls);
+    return new Promise(resolve => {
+        let emoji = getEmoji(name, urls);
 
-    axios({
-      url: emoji.url,
-      method: 'GET',
-      responseType: 'arraybuffer',
-    }).then(response => {
-      emoji.blob = response.data;
-      resolve(emoji);
+        axios({
+            url: emoji.url,
+            method: 'GET',
+            responseType: 'arraybuffer',
+        }).then(response => {
+            const contentDisposition = response.headers['content-disposition'];
+            emoji.filename = contentDisposition.split('"').slice(-2)[0];
+
+            emoji.blob = response.data;
+            resolve(emoji);
+        });
     });
-  });
 }
 
 module.exports = {
-  generateZip,
-  getLargestUrl,
-  getEmoji,
-  getFile,
+    generateZip,
+    getLargestUrl,
+    getEmoji,
+    getFile,
 };
