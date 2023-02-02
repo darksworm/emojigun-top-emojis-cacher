@@ -11,6 +11,6 @@
   "dependencies": {
     "aws-xray-sdk": "^2.5.0",
     "axios": "^0.19.2",
-    "jszip": "^3.3.0"
+    "jszip": "^3.8.0"
   }
 }
